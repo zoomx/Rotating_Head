@@ -48,7 +48,7 @@ const uint16_t MaxSearchPasses = TurnPasses + QuarterPasses;
 const int16_t HalfMaxPass = TurnPasses / 2;
 
 //positions
-uint16_t HeadPark = 2000;
+const uint16_t HeadPark = 0;
 uint16_t HeadStart = HeadPark + QuarterPasses;
 uint16_t HeadZenith = HeadPark + QuarterPasses * 2;
 uint16_t HeadStop = HeadPark + QuarterPasses * 3;
@@ -130,6 +130,70 @@ void Init() {
   } while ((found == false) && (steps < MaxSearchPasses));
 
   if (steps >= MaxSearchPasses) {
+    DEBUG.println(F("Zero not found after more than a revolution"));
+    Serial.println(F("ERR"));
+    PrintElapsedTime();
+    return;
+  }
+
+  DEBUG.print(steps);
+  DEBUG.println(F("Found zero!"));
+  PrintElapsedTime();
+  blink();
+  ActualPosition = 0;
+  Serial.println(F("OK"));
+  return;
+  /*
+    TimeStart = millis();
+    steps = 1000;
+    myStepper.step(1000);
+    found = false;
+    do
+    {
+    myStepper.step(1);
+    steps += 1;
+    if (digitalRead(ZeroPin) == NoZero_b)
+    {
+      found = true;
+    }
+    } while ((found == false) && (steps < MaxSearchPasses));
+
+    if (steps >= MaxSearchPasses) {
+    DEBUG.println(F("Zero not found second time after more than a revolution"));
+    Serial.println(F("ERR"));
+    PrintElapsedTime();
+    return;
+    }
+    ActualPosition = 0;
+
+    DEBUG.println(F(" found zero second time"));
+    DEBUG.print(steps);
+    DEBUG.println(F(" total steps"));
+    PrintElapsedTime();
+    Serial.println(F("OK"));
+  */
+}
+//*********************************************************
+void FindStepsNumber() {
+  DEBUG.println(F("FindStepsNumber"));
+  ActualPosition = 15000;     //That is no position known
+  steps = 0;
+  boolean found = false;
+  // step one revolution  in one direction:
+  DEBUG.println(F("positive direction"));
+  TimeStart = millis();
+
+  do
+  {
+    myStepper.step(1);
+    steps += 1;
+    if (digitalRead(ZeroPin) == NoZero_b)  //0 if there is a fissure, 1 if there is a pin.
+    {
+      found = true;
+    }
+  } while ((found == false) && (steps < MaxSearchPasses));
+
+  if (steps >= MaxSearchPasses) {
     DEBUG.println(F("Zero not found first time after more than a revolution"));
     Serial.println(F("ERR"));
     PrintElapsedTime();
@@ -137,10 +201,14 @@ void Init() {
   }
 
   DEBUG.print(steps);
-  DEBUG.println(F(" found zero first time"));
+  DEBUG.println(F("Found zero!"));
+  PrintElapsedTime();
   blink();
+  ActualPosition = 0;
+
+  TimeStart = millis();
   steps = 1000;
-  myStepper.step(1000);
+  myStepper.step(1000); //goes over slit or pin
   found = false;
   do
   {
@@ -164,8 +232,55 @@ void Init() {
   DEBUG.print(steps);
   DEBUG.println(F(" total steps"));
   PrintElapsedTime();
+  Serial.println(steps);
   Serial.println(F("OK"));
 
+}
+//*********************************************************
+bool SlitOrPin()
+{
+  DEBUG.println(F("Slit or Pin"));
+  DEBUG.println(F("Start search"));
+
+  uint16_t Uno = 0;
+  uint16_t Zero = 0;
+  for (int i = 0; i <= 1000; i++) {
+    myStepper.step(1);
+    if (digitalRead(ZeroPin) == 0)
+    {
+      Zero++;
+    }
+    else
+    {
+      Uno++;
+    }
+  }
+  DEBUG.print("Zero=");
+  DEBUG.println(Zero);
+  DEBUG.print("Uno=");
+  DEBUG.println(Uno);
+  if (Zero == Uno) {
+    DEBUG.print("Error, Zero and Uno are equals!");
+  }
+  else  {
+    if (Zero > Uno) {
+      DEBUG.print("Pin detected");
+      NoZero_b = 1;
+      Zero_b = 0;
+    }
+    else {
+      DEBUG.print("Slit detected");
+      NoZero_b = 0;
+      Zero_b = 1;
+    }
+
+  }
+  steps = 0;
+  if (Uno == 0 || Zero == 0) {
+    steps = -1000;
+  }
+  myStepper.step(steps);
+  Serial.println(F("OK"));
 }
 //*********************************************************
 int16_t calculateDifferenceBetweenSteps(int16_t startPosition, int16_t endPosition)
@@ -190,7 +305,7 @@ void blink() {
 //*********************************************************
 void Park() {
   TimeStart = millis();
-  uint16_t diff = 0;
+  int16_t diff = 0;
   diff = calculateDifferenceBetweenSteps(ActualPosition, HeadPark); //HeadPark - ActualPosition;
   DEBUG.print(F("Diff to Park "));
   DEBUG.println(diff);
@@ -202,7 +317,7 @@ void Park() {
 //*********************************************************
 void Start() {
   TimeStart = millis();
-  uint16_t diff = 0;
+  int16_t diff = 0;
   diff = calculateDifferenceBetweenSteps(ActualPosition, HeadStart); // HeadStart - ActualPosition;
   DEBUG.print(F("Diff to Start "));
   DEBUG.println(diff);
@@ -222,7 +337,7 @@ void Next() {
 //*********************************************************
 void Stop() {
   TimeStart = millis();
-  uint16_t diff = 0;
+  int16_t diff = 0;
   diff = calculateDifferenceBetweenSteps(ActualPosition, HeadStop);// HeadStop - ActualPosition;
   DEBUG.print(F("Diff to Stop "));
   DEBUG.println(diff);
@@ -243,7 +358,7 @@ void Goto() {
 //*********************************************************
 void Zenith() {
   TimeStart = millis();
-  uint16_t diff = 0;
+  int16_t diff = 0;
   diff = calculateDifferenceBetweenSteps(ActualPosition, HeadZenith); // HeadZenith - ActualPosition;
   DEBUG.print("Diff to Zenith ");
   DEBUG.println(diff);
@@ -316,6 +431,7 @@ void unrecognized(const char *command) {
 //*********************************************************
 //*********************************************************
 void setup() {
+
   myStepper.setSpeed(3);
   pinMode(LED_BUILTIN, OUTPUT);
 
@@ -349,6 +465,7 @@ void setup() {
   sCmd.addCommand("ZENITH", Zenith);
   sCmd.addCommand("GETPOS", GetPos);
   sCmd.addCommand("PRINTVARS", PrintVars);
+  sCmd.addCommand("ZTYPE", SlitOrPin);
   sCmd.setDefaultHandler(unrecognized);      // Handler for command that isn't matched  (says "What?")
 
   DEBUG.println(F("Waiting for commands"));
@@ -356,8 +473,6 @@ void setup() {
 //*********************************************************
 //*********************************************************
 void loop() {
-
-  //Check if it uses a pin or a fissure
   sCmd.readSerial();
 
 }
