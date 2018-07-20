@@ -45,6 +45,7 @@ const int dirB = 13;
 const uint16_t TurnPasses = 12000;
 const uint16_t QuarterPasses = TurnPasses / 4;
 const uint16_t MaxSearchPasses = TurnPasses + QuarterPasses;
+const int16_t HalfMaxPass = TurnPasses / 2;
 
 //positions
 uint16_t HeadPark = 2000;
@@ -167,6 +168,14 @@ void Init() {
 
 }
 //*********************************************************
+int16_t calculateDifferenceBetweenSteps(int16_t startPosition, int16_t endPosition)
+{
+  int16_t difference = endPosition - startPosition;
+  while (difference < -HalfMaxPass) difference += TurnPasses;
+  while (difference > HalfMaxPass) difference -= TurnPasses;
+  return difference;
+}
+//*********************************************************
 void PrintElapsedTime() {
   DEBUG.print(F("TIME->"));
   DEBUG.println(millis() - TimeStart);
@@ -182,7 +191,7 @@ void blink() {
 void Park() {
   TimeStart = millis();
   uint16_t diff = 0;
-  diff = HeadPark - ActualPosition;
+  diff = calculateDifferenceBetweenSteps(ActualPosition, HeadPark); //HeadPark - ActualPosition;
   DEBUG.print(F("Diff to Park "));
   DEBUG.println(diff);
   myStepper.step(diff);
@@ -194,7 +203,7 @@ void Park() {
 void Start() {
   TimeStart = millis();
   uint16_t diff = 0;
-  diff = HeadStart - ActualPosition;
+  diff = calculateDifferenceBetweenSteps(ActualPosition, HeadStart); // HeadStart - ActualPosition;
   DEBUG.print(F("Diff to Start "));
   DEBUG.println(diff);
   myStepper.step(diff);
@@ -214,8 +223,8 @@ void Next() {
 void Stop() {
   TimeStart = millis();
   uint16_t diff = 0;
-  diff = HeadStop - ActualPosition;
-  DEBUG.print(F("Diff to Start "));
+  diff = calculateDifferenceBetweenSteps(ActualPosition, HeadStop);// HeadStop - ActualPosition;
+  DEBUG.print(F("Diff to Stop "));
   DEBUG.println(diff);
   myStepper.step(diff);
   ActualPosition = ActualPosition + diff;
@@ -235,8 +244,8 @@ void Goto() {
 void Zenith() {
   TimeStart = millis();
   uint16_t diff = 0;
-  diff = HeadZenith - ActualPosition;
-  DEBUG.print("Diff to Start ");
+  diff = calculateDifferenceBetweenSteps(ActualPosition, HeadZenith); // HeadZenith - ActualPosition;
+  DEBUG.print("Diff to Zenith ");
   DEBUG.println(diff);
   myStepper.step(diff);
   ActualPosition = ActualPosition + diff;
