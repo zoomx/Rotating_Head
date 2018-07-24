@@ -14,21 +14,37 @@
   20180718
   routine fixed
 
+  20180724
+  Commands on SoftSerial
+  Debug on Hardware Serial
+  GOTO doesn't work!!!
+  
     wiring
   ArduinoPin    L298nPin  MotorWire Signal
+  3
   8             In1         White     A+
   9             In2         Brown     A-
-  10            In3         Blue      B+
+  //10            //In3         //Blue      //B+
   11            In4         Black     B-
+  12
+  13
+
+
+  4 SoftwareSerial RX
+  5 SoftwareSerial TX
 */
 
 #include <Stepper.h>
-#include <SerialCommand.h>
+#include "SerialCommand.h"
 #include <SoftwareSerial.h>
 
-#define DEBUG debug
+#define DEBUG Serial
+#define BAUDSSERIAL 9600
+#define BAUDDEBUG 115200
 
-SoftwareSerial debug(4, 5); // RX, TX
+SoftwareSerial SSerial(4, 5); // RX, TX
+SerialCommand sCmd(SSerial);
+//SerialCommand sCmd;
 
 // these are used for finding zero, it can be a pin or a hole.
 #define NOZERO 0
@@ -37,16 +53,16 @@ bool NoZero_b = 0;
 bool Zero_b = 1;
 
 
-const int stepsPerRevolution = 3000;  //Should be 12000
+const uint16_t stepsPerRevolution = 3000;  //Should be 12000
 const byte ZeroPin = 16; //A2 IN2
 
 
-const int pwmA = 3;
-const int pwmB = 11;
-const int brakeA = 9;
-const int brakeB = 8;
-const int dirA = 12;
-const int dirB = 13;
+const byte pwmA = 3;
+const byte pwmB = 11;
+const byte brakeA = 9;
+const byte brakeB = 8;
+const byte dirA = 12;
+const byte dirB = 13;
 
 const uint16_t TurnPasses = 12000;
 const uint16_t QuarterPasses = TurnPasses / 4;
@@ -55,10 +71,11 @@ const int16_t HalfMaxPass = TurnPasses / 2;
 
 //positions
 const uint16_t HeadPark = 0;
+const uint8_t NumScans = 50;
 uint16_t HeadStart = HeadPark + QuarterPasses;
 uint16_t HeadZenith = HeadPark + QuarterPasses * 2;
 uint16_t HeadStop = HeadPark + QuarterPasses * 3;
-uint16_t MeasSteps = (HeadStop - HeadStart) / 50;
+uint16_t MeasSteps = (HeadStop - HeadStart) / NumScans;
 
 uint16_t ActualPosition = 0;
 
@@ -66,35 +83,37 @@ uint16_t ActualPosition = 0;
 const uint16_t HeadStartDegrees = 0;
 const uint16_t HeadStopDegrees = 0;
 
-int16_t steps = 0;
+int16_t steps = 0;  //steps can be negative!
 
 //SerialInputNewline
 const byte numChars = 10;
 char receivedChars[numChars];  // an array to store the received data
 boolean newData = false;
 const uint32_t WaitMillis = 10000;
-byte ndx = 0;
-const char endMarker = 13;   //'\r';
+//byte ndx = 0;
+const char endMarker = 10;   //'\r'; CR+LF
 
 // initialize the stepper library on pins 8 through 11:
 Stepper myStepper(stepsPerRevolution, 12, 13);
 
 uint32_t TimeStart = 0;
 
-SerialCommand sCmd;
+
 
 //*********************************************************
 int16_t recvWithEndMarker() {
-  ndx = 0;
+  DEBUG.print(F("recvWithEndMarker"));
+  //ndx = 0;
+  static byte ndx = 0;
 
   char rc;
   uint32_t StartTime = millis();
   newData = false;
 
   // if (Serial.available() > 0) {
-  while (Serial.available() > 0 && newData == false && millis() - StartTime <= WaitMillis ) {
-    rc = Serial.read();
-    //Serial.println(rc);
+  while (SSerial.available() > 0 && newData == false && millis() - StartTime <= WaitMillis ) {
+    rc = SSerial.read();
+    //SSerial.println(rc);
 
     if (rc != endMarker) {
       receivedChars[ndx] = rc;
@@ -104,7 +123,7 @@ int16_t recvWithEndMarker() {
       }
     }
     else {
-      receivedChars[ndx] = '\0'; // terminate the string
+      receivedChars[ndx - 1] = '\0'; // terminate the string, avoid CR
       //ndx = 0;
       newData = true;
 
@@ -137,7 +156,7 @@ void Init() {
 
   if (steps >= MaxSearchPasses) {
     DEBUG.println(F("Zero not found after more than a revolution"));
-    Serial.println(F("ERR"));
+    SSerial.println(F("ERR"));
     PrintElapsedTime();
     return;
   }
@@ -147,7 +166,7 @@ void Init() {
   PrintElapsedTime();
   blink();
   ActualPosition = 0;
-  Serial.println(F("OK"));
+  SSerial.println(F("OK"));
   return;
   /*
     TimeStart = millis();
@@ -166,7 +185,7 @@ void Init() {
 
     if (steps >= MaxSearchPasses) {
     DEBUG.println(F("Zero not found second time after more than a revolution"));
-    Serial.println(F("ERR"));
+    SSerial.println(F("ERR"));
     PrintElapsedTime();
     return;
     }
@@ -176,7 +195,7 @@ void Init() {
     DEBUG.print(steps);
     DEBUG.println(F(" total steps"));
     PrintElapsedTime();
-    Serial.println(F("OK"));
+    SSerial.println(F("OK"));
   */
 }
 //*********************************************************
@@ -201,7 +220,7 @@ void FindStepsNumber() {
 
   if (steps >= MaxSearchPasses) {
     DEBUG.println(F("Zero not found first time after more than a revolution"));
-    Serial.println(F("ERR"));
+    SSerial.println(F("ERR"));
     PrintElapsedTime();
     return;
   }
@@ -228,7 +247,7 @@ void FindStepsNumber() {
 
   if (steps >= MaxSearchPasses) {
     DEBUG.println(F("Zero not found second time after more than a revolution"));
-    Serial.println(F("ERR"));
+    SSerial.println(F("ERR"));
     PrintElapsedTime();
     return;
   }
@@ -239,7 +258,7 @@ void FindStepsNumber() {
   DEBUG.println(F(" total steps"));
   PrintElapsedTime();
   DEBUG.println(steps);
-  Serial.println(F("OK"));
+  SSerial.println(F("OK"));
 
 }
 //*********************************************************
@@ -286,7 +305,7 @@ bool SlitOrPin()
     steps = -1000;
   }
   myStepper.step(steps);
-  Serial.println(F("OK"));
+  SSerial.println(F("OK"));
 }
 //*********************************************************
 int16_t calculateDifferenceBetweenSteps(int16_t startPosition, int16_t endPosition)
@@ -310,6 +329,7 @@ void blink() {
 }
 //*********************************************************
 void Park() {
+  DEBUG.println(F("PARK"));
   TimeStart = millis();
   int16_t diff = 0;
   diff = calculateDifferenceBetweenSteps(ActualPosition, HeadPark); //HeadPark - ActualPosition;
@@ -318,10 +338,11 @@ void Park() {
   myStepper.step(diff);
   ActualPosition = ActualPosition + diff;
   PrintElapsedTime();
-  Serial.println(F("OK"));
+  SSerial.println(F("OK"));
 }
 //*********************************************************
 void Start() {
+  DEBUG.println(F("START"));
   TimeStart = millis();
   int16_t diff = 0;
   diff = calculateDifferenceBetweenSteps(ActualPosition, HeadStart); // HeadStart - ActualPosition;
@@ -330,18 +351,20 @@ void Start() {
   myStepper.step(diff);
   ActualPosition = ActualPosition + diff;
   PrintElapsedTime();
-  Serial.println(F("OK"));
+  SSerial.println(F("OK"));
 }
 //*********************************************************
 void Next() {
+  DEBUG.println(F("NEXT"));
   TimeStart = millis();
   myStepper.step(MeasSteps);
   ActualPosition = ActualPosition + MeasSteps;
   PrintElapsedTime();
-  Serial.println(F("OK"));
+  SSerial.println(F("OK"));
 }
 //*********************************************************
 void Stop() {
+  DEBUG.println(F("STOP"));
   TimeStart = millis();
   int16_t diff = 0;
   diff = calculateDifferenceBetweenSteps(ActualPosition, HeadStop);// HeadStop - ActualPosition;
@@ -350,19 +373,26 @@ void Stop() {
   myStepper.step(diff);
   ActualPosition = ActualPosition + diff;
   PrintElapsedTime();
-  Serial.println(F("OK"));
+  SSerial.println(F("OK"));
 }
 //*********************************************************
 void Goto() {
+  DEBUG.println(F("GOTO"));
   TimeStart = millis();
-  steps = receivedChars;
+  recvWithEndMarker();
+  DEBUG.println(receivedChars);
+  String response = receivedChars;
+  DEBUG.println(response);
+  steps = response.toInt();
+  DEBUG.println(steps);
   myStepper.step(steps);
   ActualPosition = ActualPosition + steps;
   PrintElapsedTime();
-  Serial.println(F("OK"));
+  SSerial.println(F("OK"));
 }
 //*********************************************************
 void Zenith() {
+  DEBUG.println(F("ZENITH"));
   TimeStart = millis();
   int16_t diff = 0;
   diff = calculateDifferenceBetweenSteps(ActualPosition, HeadZenith); // HeadZenith - ActualPosition;
@@ -371,55 +401,62 @@ void Zenith() {
   myStepper.step(diff);
   ActualPosition = ActualPosition + diff;
   PrintElapsedTime();
-  Serial.println(F("OK"));
+  SSerial.println(F("OK"));
+}
+//*********************************************************
+void Hello() {
+  DEBUG.println(F("HELLO"));
+  SSerial.println(F("OK"));
 }
 //*********************************************************
 void GetPos() {
   DEBUG.print(F("ActualPosition "));
-  Serial.println(ActualPosition);
+  SSerial.println(ActualPosition);
+  DEBUG.println(ActualPosition);
 }
 //*********************************************************
 void PrintVars() {
-  Serial.println(F("Print vars"));
-  Serial.print("stepsPerRevolution ");
-  Serial.println(stepsPerRevolution);
-  Serial.print(F("ZeroPin "));
-  //Serial.println(ZeroPin);
-  //Serial.print(F("ZeroPin "));
-  Serial.println(ZeroPin);
-  Serial.print(F("TurnPasses "));
-  Serial.println(TurnPasses);
-  Serial.print(F("QuarterPasses "));
-  Serial.println(QuarterPasses);
-  Serial.print(F("MaxSearchPasses "));
-  Serial.println(MaxSearchPasses);
-  Serial.print(F("HeadPark "));
-  Serial.println(HeadPark);
-  Serial.print(F("HeadStart "));
-  Serial.println(HeadStart);
-  Serial.print(F("HeadZenith "));
-  Serial.println(HeadZenith);
-  Serial.print(F("HeadStop "));
-  Serial.println(HeadStop);
-  Serial.print(F("MeasSteps "));
-  Serial.println(MeasSteps);
-  Serial.print(F("ActualPosition "));
-  Serial.println(ActualPosition);
-  Serial.print(F("HeadStartDegrees "));
-  Serial.println(HeadStartDegrees);
-  Serial.print(F("HeadStopDegrees "));
-  Serial.println(HeadStopDegrees);
-  Serial.print(F("WaitMillis "));
-  Serial.println(WaitMillis);
-  Serial.print(F("endMarker "));
-  Serial.println(endMarker, HEX);
-  Serial.print(F("Version "));
-  Serial.println(VERSION);
+  SSerial.println(F("Print vars"));
+  SSerial.print("stepsPerRevolution ");
+  SSerial.println(stepsPerRevolution);
+  SSerial.print(F("ZeroPin "));
+  //SSerial.println(ZeroPin);
+  //SSerial.print(F("ZeroPin "));
+  SSerial.println(ZeroPin);
+  SSerial.print(F("TurnPasses "));
+  SSerial.println(TurnPasses);
+  SSerial.print(F("QuarterPasses "));
+  SSerial.println(QuarterPasses);
+  SSerial.print(F("MaxSearchPasses "));
+  SSerial.println(MaxSearchPasses);
+  SSerial.print(F("HeadPark "));
+  SSerial.println(HeadPark);
+  SSerial.print(F("HeadStart "));
+  SSerial.println(HeadStart);
+  SSerial.print(F("HeadZenith "));
+  SSerial.println(HeadZenith);
+  SSerial.print(F("HeadStop "));
+  SSerial.println(HeadStop);
+  SSerial.print(F("MeasSteps "));
+  SSerial.println(MeasSteps);
+  SSerial.print(F("ActualPosition "));
+  SSerial.println(ActualPosition);
+  SSerial.print(F("HeadStartDegrees "));
+  SSerial.println(HeadStartDegrees);
+  SSerial.print(F("HeadStopDegrees "));
+  SSerial.println(HeadStopDegrees);
+  SSerial.print(F("WaitMillis "));
+  SSerial.println(WaitMillis);
+  SSerial.print(F("endMarker "));
+  SSerial.println(endMarker, HEX);
+  SSerial.print(F("Version "));
+  SSerial.println(VERSION);
+  DEBUG.println(VERSION);
   /*
-    Serial.print("pwmA ");
-    Serial.println(pwmA);
-    Serial.print("pwmB ");
-    Serial.println(pwmB);
+    SSerial.print("pwmA ");
+    SSerial.println(pwmA);
+    SSerial.print("pwmB ");
+    SSerial.println(pwmB);
 
 
     const int pwmA = 3;
@@ -433,8 +470,8 @@ void PrintVars() {
 
 //*********************************************************
 void unrecognized(const char *command) {
-  Serial.println(F("CMDERR"));
-
+  SSerial.println(F("CMDERR"));
+  DEBUG.println(F("CMDERR"));
 }
 //*********************************************************
 //*********************************************************
@@ -454,8 +491,8 @@ void setup() {
 
   pinMode(ZeroPin, INPUT);   //maybe use INPUT_PULLUP?
 
-  Serial.begin(9600);
-  DEBUG.begin(115200);
+  SSerial.begin(BAUDSSERIAL);
+  DEBUG.begin(BAUDDEBUG);
   DEBUG.println(F("StepperCommands"));
 
   for (int i = 0; i <= 10; i++) {
@@ -475,8 +512,9 @@ void setup() {
   sCmd.addCommand("GETPOS", GetPos);
   sCmd.addCommand("PRINTVARS", PrintVars);
   sCmd.addCommand("ZTYPE", SlitOrPin);
-  sCmd.setDefaultHandler(unrecognized);      // Handler for command that isn't matched  (says "What?")
-
+  sCmd.addCommand("HELLO", Hello);
+  //sCmd.setDefaultHandler(unrecognized);      // Handler for command that isn't matched  (says "What?") Old Library
+  sCmd.addDefaultHandler(unrecognized);       //New Library
   DEBUG.println(F("Waiting for commands"));
 }
 //*********************************************************
