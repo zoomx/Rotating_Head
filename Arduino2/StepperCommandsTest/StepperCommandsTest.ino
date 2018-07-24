@@ -1,13 +1,13 @@
 /*
   StepperCommandsTest
-
+  20180724
 
 
 
 */
 
-#define DEBUG Serial   //debug
-#define COMMAND debug   //debug
+#define DEBUG Serial
+#define COMMAND SSerial
 
 #include <SoftwareSerial.h>
 
@@ -16,11 +16,19 @@ const byte numChars = 32;
 char receivedChars[numChars];   // an array to store the received data
 boolean newData = false;
 
-SoftwareSerial debug(8, 9); // RX, TX
+SoftwareSerial SSerial(4, 5); // RX, TX
 
 char OK1[] = "OK";
 char ERR1[] = "ERR";
 byte n = 99;
+
+const uint32_t LongWait = 10000;
+const uint32_t ShortWait = 2000;
+uint32_t WaitMillis = LongWait;
+
+uint32_t StartTime;
+
+bool Timeout = false;
 
 //*********************************************************
 void recvWithEndMarker() {
@@ -29,7 +37,8 @@ void recvWithEndMarker() {
   char endMarker = '\n';
   char rc;
 
-  while (COMMAND.available() > 0 && newData == false) {
+
+  while (COMMAND.available() > 0 && newData == false && millis() - StartTime <= WaitMillis) {
     rc = COMMAND.read();
 
     if (rc != endMarker) {
@@ -45,17 +54,38 @@ void recvWithEndMarker() {
       newData = true;
     }
   }
+  if (millis() - StartTime > WaitMillis) {
+    if (ndx > 0) {
+      receivedChars[ndx - 1] = '\0'; // terminate the string
+
+    }
+
+    ndx = 0;
+    newData = true;
+    Timeout = true;
+  }
 }
 //*********************************************************
 void WaitForAnswer() {
+  Timeout = false;
+  DEBUG.print("WaitMillis ->");
+  DEBUG.println(WaitMillis);
+  StartTime = millis();
   do {
     recvWithEndMarker();
   } while (newData == false);
-
+  if (Timeout) {
+    DEBUG.println("Timeout");
+    DEBUG.println(millis() - StartTime);
+  }
 }
 //*********************************************************
 bool CheckAnswer() {
   bool flag = false;
+  if (Timeout) {
+    newData = false;
+    return flag;
+  }
   n = 99;
   DEBUG.println(receivedChars);
   for (byte i = 0; i < 10; i++) {
@@ -77,7 +107,7 @@ bool CheckAnswer() {
   receivedChars[0] = '\0';
   DEBUG.println("------------------");
   return flag;
-  
+
 }
 
 //*********************************************************
@@ -88,41 +118,59 @@ void setup() {
   DEBUG.println(F("StepperCommandsTest"));
   //Serial.println(F("StepperCommandsTest"));
 
+  //HELLO
+  WaitMillis = ShortWait;
+  COMMAND.println("HELLO");
+  DEBUG.println("HELLO");
+  WaitForAnswer();
+  if (CheckAnswer() == false) {
+    DEBUG.println(F("Failed on HELLO"));
+  }
+
   //INIT
+  WaitMillis = LongWait;
   COMMAND.println("INIT");
   DEBUG.println("INIT");
-  while (CheckAnswer() == false) {
-    WaitForAnswer();
+  WaitForAnswer();
+  if (CheckAnswer() == false) {
+    DEBUG.println(F("Failed on INIT"));
   }
+
   //get a scan
 
   //Goto START
+  WaitMillis = LongWait / 2;
   COMMAND.println("START");
   DEBUG.println("START");
-  while (CheckAnswer() == false) {
-    WaitForAnswer();
+  WaitForAnswer();
+  if (CheckAnswer() == false) {
+    DEBUG.println(F("Failed on START"));
   }
 
   //get a scan
 
   //SCAN
+  WaitMillis = ShortWait;
   for (byte i = 0; i < 50; i++) {
     DEBUG.print(i);
     DEBUG.print(" ");
     COMMAND.println("NEXT");
     DEBUG.println("NEXT");
 
-    while (CheckAnswer() == false) {
-      WaitForAnswer();
+    WaitForAnswer();
+    if (CheckAnswer() == false) {
+      DEBUG.println(F("Failed on NEXT"));
     }
     //get a scan
   }
 
   //Goto PARK
+  WaitMillis = LongWait / 2;
   COMMAND.println("PARK");
   DEBUG.println("PARK");
-  while (CheckAnswer() == false) {
-    WaitForAnswer();
+  WaitForAnswer();
+  if (CheckAnswer() == false) {
+    DEBUG.println(F("Failed on PARK"));
   }
   //get a scan
 
