@@ -455,7 +455,7 @@ void setup() {
   pinMode(ZeroPin, INPUT);   //maybe use INPUT_PULLUP?
 
   Serial.begin(9600);
-  DEBUG.begin(9600);
+  DEBUG.begin(115200);
   DEBUG.println(F("StepperCommands"));
 
   for (int i = 0; i <= 10; i++) {
