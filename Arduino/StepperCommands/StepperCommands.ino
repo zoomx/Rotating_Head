@@ -1,4 +1,4 @@
-
+#define VERSION "1.0"
 
 /*
   StepperCommands
@@ -7,6 +7,9 @@
   Find zero twice and count the steps
 
   by zoomx 20 Dec 2016
+
+  20180710
+  Added serial commands and a lot of routines
 
   20180718
   routine fixed
@@ -21,8 +24,11 @@
 
 #include <Stepper.h>
 #include <SerialCommand.h>
+#include <SoftwareSerial.h>
 
-#define DEBUG Serial
+#define DEBUG debug
+
+SoftwareSerial debug(4, 5); // RX, TX
 
 // these are used for finding zero, it can be a pin or a hole.
 #define NOZERO 0
@@ -232,7 +238,7 @@ void FindStepsNumber() {
   DEBUG.print(steps);
   DEBUG.println(F(" total steps"));
   PrintElapsedTime();
-  Serial.println(steps);
+  DEBUG.println(steps);
   Serial.println(F("OK"));
 
 }
@@ -407,6 +413,8 @@ void PrintVars() {
   Serial.println(WaitMillis);
   Serial.print(F("endMarker "));
   Serial.println(endMarker, HEX);
+  Serial.print(F("Version "));
+  Serial.println(VERSION);
   /*
     Serial.print("pwmA ");
     Serial.println(pwmA);
@@ -446,7 +454,8 @@ void setup() {
 
   pinMode(ZeroPin, INPUT);   //maybe use INPUT_PULLUP?
 
-  Serial.begin(115200);
+  Serial.begin(9600);
+  DEBUG.begin(9600);
   DEBUG.println(F("StepperCommands"));
 
   for (int i = 0; i <= 10; i++) {
