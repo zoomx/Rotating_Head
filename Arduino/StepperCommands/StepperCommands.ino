@@ -1,4 +1,5 @@
 #define VERSION "1.0"
+#define SUBVERSION "2"
 
 /*
   StepperCommands
@@ -19,6 +20,12 @@
   Debug on Hardware Serial
   GOTO doesn't work!!!
   
+  20180725
+  GOTO fixed example GOTO 2456/r/n
+  #define MAXSERIALCOMMANDS 12 Otherwise you can add only 10 commands
+  STEPS added
+  
+
     wiring
   ArduinoPin    L298nPin  MotorWire Signal
   3
@@ -85,6 +92,7 @@ const uint16_t HeadStopDegrees = 0;
 
 int16_t steps = 0;  //steps can be negative!
 
+
 //SerialInputNewline
 const byte numChars = 10;
 char receivedChars[numChars];  // an array to store the received data
@@ -92,6 +100,7 @@ boolean newData = false;
 const uint32_t WaitMillis = 10000;
 //byte ndx = 0;
 const char endMarker = 10;   //'\r'; CR+LF
+
 
 // initialize the stepper library on pins 8 through 11:
 Stepper myStepper(stepsPerRevolution, 12, 13);
@@ -377,14 +386,50 @@ void Stop() {
 }
 //*********************************************************
 void Goto() {
+  char *arg;
   DEBUG.println(F("GOTO"));
   TimeStart = millis();
-  recvWithEndMarker();
-  DEBUG.println(receivedChars);
-  String response = receivedChars;
-  DEBUG.println(response);
-  steps = response.toInt();
+  //recvWithEndMarker();
+
+  arg = sCmd.next();
+  DEBUG.println(arg);
+
+  steps = atoi(arg);
   DEBUG.println(steps);
+  /*
+    String response = arg;
+    DEBUG.println(response);
+    steps = response.toInt();
+    DEBUG.println(steps);
+  */
+  int16_t diff = 0;
+  diff = calculateDifferenceBetweenSteps(ActualPosition, HeadZenith); // HeadZenith - ActualPosition;
+  DEBUG.print("Diff to New Position ");
+  DEBUG.println(diff);
+  myStepper.step(diff);
+  ActualPosition = ActualPosition + diff;
+  PrintElapsedTime();
+  SSerial.println(F("OK"));
+}
+//*********************************************************
+void MakeSteps() {
+  char *arg;
+  DEBUG.println(F("STEPS"));
+  TimeStart = millis();
+  //recvWithEndMarker();
+
+  arg = sCmd.next();
+  DEBUG.println(arg);
+
+  steps = atoi(arg);
+  DEBUG.println(steps);
+  /*
+    String response = arg;
+    DEBUG.println(response);
+    steps = response.toInt();
+    DEBUG.println(steps);
+  */
+
   myStepper.step(steps);
   ActualPosition = ActualPosition + steps;
   PrintElapsedTime();
@@ -452,6 +497,11 @@ void PrintVars() {
   SSerial.print(F("Version "));
   SSerial.println(VERSION);
   DEBUG.println(VERSION);
+  SSerial.print(F("SubVersion "));
+  SSerial.println(SUBVERSION);
+  DEBUG.println(SUBVERSION);
+  SSerial.println( "Compiled: " __DATE__ ", " __TIME__ ", " __VERSION__);
+  DEBUG.println( "Compiled: " __DATE__ ", " __TIME__ ", " __VERSION__);
   /*
     SSerial.print("pwmA ");
     SSerial.println(pwmA);
@@ -507,12 +557,14 @@ void setup() {
   sCmd.addCommand("START", Start);
   sCmd.addCommand("NEXT", Next);
   sCmd.addCommand("STOP", Stop);
-  sCmd.addCommand("GOTO", Goto);
   sCmd.addCommand("ZENITH", Zenith);
   sCmd.addCommand("GETPOS", GetPos);
   sCmd.addCommand("PRINTVARS", PrintVars);
   sCmd.addCommand("ZTYPE", SlitOrPin);
   sCmd.addCommand("HELLO", Hello);
+  sCmd.addCommand("GOTO", Goto);
+  sCmd.addCommand("STEPS", MakeSteps);
+  //sCmd.addCommand("DUMMY", Hello); //it seems that the last add is never recognized!
   //sCmd.setDefaultHandler(unrecognized);      // Handler for command that isn't matched  (says "What?") Old Library
   sCmd.addDefaultHandler(unrecognized);       //New Library
   DEBUG.println(F("Waiting for commands"));
