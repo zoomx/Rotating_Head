@@ -1,5 +1,5 @@
 #define VERSION "1.0"
-#define SUBVERSION "2"
+#define SUBVERSION "3"
 
 /*
   StepperCommands
@@ -19,12 +19,14 @@
   Commands on SoftSerial
   Debug on Hardware Serial
   GOTO doesn't work!!!
-  
+
   20180725
   GOTO fixed example GOTO 2456/r/n
   #define MAXSERIALCOMMANDS 12 Otherwise you can add only 10 commands
   STEPS added
-  
+
+  2018 07 27
+  recvWithEndMarker removed
 
     wiring
   ArduinoPin    L298nPin  MotorWire Signal
@@ -93,14 +95,7 @@ const uint16_t HeadStopDegrees = 0;
 int16_t steps = 0;  //steps can be negative!
 
 
-//SerialInputNewline
-const byte numChars = 10;
-char receivedChars[numChars];  // an array to store the received data
-boolean newData = false;
 const uint32_t WaitMillis = 10000;
-//byte ndx = 0;
-const char endMarker = 10;   //'\r'; CR+LF
-
 
 // initialize the stepper library on pins 8 through 11:
 Stepper myStepper(stepsPerRevolution, 12, 13);
@@ -108,39 +103,6 @@ Stepper myStepper(stepsPerRevolution, 12, 13);
 uint32_t TimeStart = 0;
 
 
-
-//*********************************************************
-int16_t recvWithEndMarker() {
-  DEBUG.print(F("recvWithEndMarker"));
-  //ndx = 0;
-  static byte ndx = 0;
-
-  char rc;
-  uint32_t StartTime = millis();
-  newData = false;
-
-  // if (Serial.available() > 0) {
-  while (SSerial.available() > 0 && newData == false && millis() - StartTime <= WaitMillis ) {
-    rc = SSerial.read();
-    //SSerial.println(rc);
-
-    if (rc != endMarker) {
-      receivedChars[ndx] = rc;
-      ndx++;
-      if (ndx >= numChars) {
-        ndx = numChars - 1;
-      }
-    }
-    else {
-      receivedChars[ndx - 1] = '\0'; // terminate the string, avoid CR
-      //ndx = 0;
-      newData = true;
-
-    }
-  }
-  DEBUG.println(receivedChars);
-  return atoi(receivedChars);
-}
 
 
 //*********************************************************
@@ -492,8 +454,6 @@ void PrintVars() {
   SSerial.println(HeadStopDegrees);
   SSerial.print(F("WaitMillis "));
   SSerial.println(WaitMillis);
-  SSerial.print(F("endMarker "));
-  SSerial.println(endMarker, HEX);
   SSerial.print(F("Version "));
   SSerial.println(VERSION);
   DEBUG.println(VERSION);
