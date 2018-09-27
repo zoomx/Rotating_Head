@@ -33,7 +33,7 @@
   3
   8             In1         White     A+
   9             In2         Brown     A-
-  //10            //In3         //Blue      //B+
+  10            In3         Blue      B+
   11            In4         Black     B-
   12
   13
@@ -535,6 +535,3 @@ void loop() {
   sCmd.readSerial();
 
 }
-
-
-
