@@ -1,5 +1,14 @@
 /*
   Teensy_Commands_USB2000_SD_OneFile
+  
+  20181002
+  char headerScan[22]; was 20 and I got a freeze on writing it to file
+  merged from Teensy_Commands_USB2000_SD_OneFile_Exp2
+  
+  20180925
+  Added scans on PARK and START
+  Added quality calculation
+
   20180904
   Generate an entire file scan
   Wait for a button press
@@ -8,8 +17,8 @@
 
 
   TODO
-  spectrum angle generation
-  spectrum quality evaluation
+  Calculate Park steps!
+  Add Light, temp and UV sensors?
 
 	Commands
   sCmd.addCommand("INIT", Init);
@@ -46,6 +55,9 @@
 #define COMMAND Serial3 //Serial3 on PCB label but sometimes is 2!!!
 #define USB2000 Serial1
 
+#define PARKSTEPS 0
+#define STARTSTEPS 3000
+
 //Onboard LED
 #define ONBOARD_LED LED_BUILTIN
 
@@ -63,8 +75,6 @@ const byte pressedLevel = LOW;
 const byte numChars = 32;
 char receivedChars[numChars];   // an array to store the received data
 boolean newData = false;
-
-byte NumScans = 10;
 
 //Arduino
 char OK1[] = "OK";
@@ -86,13 +96,58 @@ bool Timeout = false;
 const char header1[] = "Vbatt. Vpanel IBatt. Temp.";
 const char headerFinta1[] = "13,063 13,1689 0,2253 0,5";
 const char header2[] = "N_Acq Hour Min Sec MotorPos CoAdding Int_Time Ch_Num Scan_Numb Scan_MemInt_Time_Count Pixel_Mode Pixel_Mode_Param ---> Spectral_Data...";
-char headerScan[20];
+char headerScan[22];
 
 const uint16_t numCharsToReceive = 4108; //vengono scartati i primi 2 FF FF e gli ultimi 2 FF FD
 byte tempBuffer[numCharsToReceive];
 
 bool IsGood = false;
 
+uint16_t ActualSteps = PARKSTEPS;
+byte NumScans = 50;   //------------------------------------NUMSCANS!!!!!!!!!!!!!!<--------------
+
+
+//variables for scan evaluation
+//Dark
+const uint16_t DarkStartIndex = 0;
+const uint16_t DarkStopIndex = 33;
+float meanDark = 0;
+//309 band
+const uint16_t B309StartIndex = 279;
+const uint16_t B309StopIndex = 289;
+float mean309 = 0;
+//335 band
+const uint16_t B335StartIndex = 620;
+const uint16_t B335StopIndex = 630;
+float mean335 = 0;
+float qualityIndex = 0;
+float GlobalQualityIndex = 0;
+
+//Files to send
+const uint8_t MaxLenghtFilename = 28;
+struct FileScore {
+  char filename [MaxLenghtFilename];
+  uint16_t score;
+};
+const uint8_t MaxFilesToSend = 255;
+FileScore my2dArray[MaxFilesToSend];
+uint8_t my2dArrayIndex = 0;
+
+//exposition
+const float CoeffHighOtpimalLevel = 0.9;
+const float CoeffLowOtpimalLevel  = 0.8;
+const uint16_t MaxIntegrationTime = 2000;
+uint16_t IntegrationTime = 100;
+uint16_t MaxCounts = 65535;
+uint16_t HighOptimalLevel = MaxCounts * CoeffHighOtpimalLevel;
+uint16_t LowOptimalLevel = MaxCounts * CoeffLowOtpimalLevel;
+uint16_t spectraMax = 0;
+uint16_t spectraMin = 65535;
+uint16_t GspectraMax = 0;
+uint16_t GspectraMin = 65535;
+byte CoAdd = 1;
+
+//SDfat
 SdFatSdio sd;
 File file;
 //*********************************************************
@@ -214,20 +269,50 @@ void Blink(uint16_t Delay) {
   digitalWrite(ONBOARD_LED, LOW);
 }
 //*********************************************************
-bool FullSkyScan() {
-  //Perform a full sky scan
-  bool AllOk = false;
-
-  //ADD goto PArk and get a scan!!!!
-
-  //Goto START
-  WaitMillis = LongWait / 2;
-  COMMAND.println("START");
-  DEBUG.println("START");
-  WaitForAnswer();
-  if (CheckAnswer() == false) {
-    DEBUG.println(F("Failed on START"));
+float CalculateQuality() {
+  //
+  float ThisQualityIndex = 0;
+  meanDark = 0;
+  mean309 = 0;
+  mean335 = 0;
+  for (uint16_t i = DarkStartIndex ; i <= DarkStopIndex ; i++) {
+    meanDark = meanDark + tempBuffer[i];
   }
+
+  for (uint16_t i = B309StartIndex ; i <= B309StopIndex ; i++) {
+    mean309 = mean309 + tempBuffer[i];
+  }
+
+  for (uint16_t i = B335StartIndex ; i <= B335StopIndex ; i++) {
+    mean335 = mean335 + tempBuffer[i];
+  }
+  meanDark = meanDark / (DarkStopIndex - DarkStartIndex);
+  mean309 = mean309 / (B309StopIndex - B309StartIndex);
+  mean335 = mean335 / (B335StopIndex - B335StartIndex);
+  DEBUG.print("\nQuality Index ---> ");
+  DEBUG.print(meanDark);
+  DEBUG.print(" ");
+  DEBUG.print(meanDark);
+  DEBUG.print(" ");
+  DEBUG.print(meanDark);
+  DEBUG.print(" ");
+  ThisQualityIndex = (mean335 - meanDark) / (mean309 - meanDark);
+  DEBUG.println(ThisQualityIndex);
+  return ThisQualityIndex;
+}
+//*********************************************************
+void ErrorBlink10() {
+  for (uint8_t i = 0; i < 11; i++) {
+    Blink(100);
+  }
+}
+//*********************************************************
+bool FullSkyScan() {
+  //Perform a full sky scan starting from park
+
+  // bool AllOk = false;
+  GlobalQualityIndex = 0;
+
 
   //Generate filename
   DEBUG.println("");
@@ -242,8 +327,9 @@ bool FullSkyScan() {
 
   if (!sd.begin()) {
     DEBUG.println("SdFatSdio begin() failed");
-    //return AllOk
-    sd.initErrorHalt("SdFatSdio begin() failed");
+    //sd.initErrorHalt("SdFatSdio begin() failed");
+    //return false;
+    ErrorBlink10();
   }
 
   /*
@@ -261,13 +347,16 @@ bool FullSkyScan() {
       }
     }
   */
+  Blink(100);
 
   //Opening file
   DEBUG.println("opening");
   if (!file.open(filename, O_RDWR | O_CREAT)) {
     DEBUG.println("open failed");
-    //return AllOk
-    sd.errorHalt("open failed");
+    //sd.errorHalt("open failed");
+    DEBUG.println("open file failed!!!");
+    //return false;
+    ErrorBlink10();
   }
   DEBUG.println("File opened!");
   /*
@@ -278,7 +367,7 @@ bool FullSkyScan() {
     }
   */
   //Print first headers
-
+  Blink(100);
   DEBUG.println("printing header1");
 
 
@@ -288,13 +377,73 @@ bool FullSkyScan() {
 
   DEBUG.println("printed header1");
   file.flush();
-  //SCAN
+  Blink(100);
+
+  //Goto PARK
+  WaitMillis = LongWait / 2;
+  COMMAND.println("PARK");
+  DEBUG.println("PARK");
+  WaitForAnswer();
+  if (CheckAnswer() == false) {
+    DEBUG.println(F("Failed on PARK"));
+    //return false;
+  }
+  Blink(100);
+  //Get a single scan
+  ActualSteps = PARKSTEPS;
+  GetScanFromSpectrometer();
+  sprintf(headerScan, "%05u %02u %02u %02u %05u", 0, hour(), minute(), second(), ActualSteps / 2);
+  DEBUG.println(headerScan);
+  file.print(headerScan);
+  DEBUG.println("Header written");
+  //file.flush();
+  //DEBUG.println("flushed2");
+  DEBUG.println(numCharsToReceive);
+  file.write(tempBuffer, numCharsToReceive);
+  file.println("");
+  file.flush();
+  DEBUG.println("Done PARK scan");
+
+  Blink(100);
+
+  //Goto START
+  WaitMillis = LongWait / 2;
+  COMMAND.println("START");
+  DEBUG.println("START");
+  WaitForAnswer();
+  if (CheckAnswer() == false) {
+    DEBUG.println(F("Failed on START"));
+    //return false;
+  }
+  //Get a single scan
+  ActualSteps = STARTSTEPS;
+  GetScanFromSpectrometer();
+  sprintf(headerScan, "%05u %02u %02u %02u %05u", 1, hour(), minute(), second(), ActualSteps / 2);
+  DEBUG.println(headerScan);
+  file.print(headerScan);
+  DEBUG.println("Header written");
+  file.flush();
+  DEBUG.println("flushed2");
+  DEBUG.println(numCharsToReceive);
+  file.write(tempBuffer, numCharsToReceive);
+  file.println("");
+  file.flush();
+  DEBUG.println("Done START scan");
+
+  Blink(100);
+
+  //calculating quality index
+  qualityIndex = CalculateQuality();
+
+  //SCAN the others positions
+  //Here start the scan cycle ++++++++++++++++++++++++
   WaitMillis = ShortWait;
   for (byte i = 0; i < NumScans; i++) {
-
+    Blink(100);
     //This is spectrum number i
     DEBUG.print(i);
     DEBUG.print(" ");
+
     //Move head
     COMMAND.println("NEXT");
     DEBUG.println("NEXT");
@@ -303,16 +452,15 @@ bool FullSkyScan() {
     WaitForAnswer();
     if (CheckAnswer() == false) {
       DEBUG.println(F("Failed on NEXT"));
-      //return AllOk
+      //return false;
     }
-
+    //Get a single scan
+    ActualSteps = ActualSteps + 120;
     GetScanFromSpectrometer();
 
-    DEBUG.println("flushing..");
-    file.flush();
-
     DEBUG.println("Writing...");
-    sprintf(headerScan, "%05u %02u %02u %02u %05u", i, hour(), minute(), second(), 159);
+    sprintf(headerScan, "%05u %02u %02u %02u %05u", i + 2, hour(), minute(), second(),  ActualSteps / 2);
+    //i + 2 because we have written 2 scans
     DEBUG.println(headerScan);
     file.print(headerScan);
     DEBUG.println("Header written");
@@ -323,14 +471,22 @@ bool FullSkyScan() {
     file.println("");
     file.flush();
     DEBUG.println("Done");
+    //calculating quality index
+    qualityIndex = CalculateQuality();
   }
+  //+++++++++++++++++++++++++++++++++++++++++++++++++++++
+  //Here finish the scan cycle
 
   DEBUG.println("Closing file");
   file.close();
   DEBUG.println("File full written!");
-  AllOk = true;
   zeroesDataArray();
-  return AllOk;
+
+  //Adding file to send list
+  //my2dArray[my2dArrayIndex].filename = filename;
+  strcpy(my2dArray[my2dArrayIndex].filename, filename );
+  my2dArray[my2dArrayIndex].score = qualityIndex;
+  return true;
 }
 //*********************************************************
 //*********************SETUP*******************************
@@ -395,6 +551,8 @@ void loop() {
     DEBUG.println(F("Failed on HELLO"));
   }
 
+  Blink(100);
+
   //INIT
   //This should be done once a day
   WaitMillis = LongWait;
@@ -406,6 +564,8 @@ void loop() {
   if (CheckAnswer() == false) {
     DEBUG.println(F("Failed on INIT"));
   }
+
+  Blink(100);
 
   //get a full scan
   IsGood = FullSkyScan();

@@ -9,11 +9,7 @@ const uint8_t NAK = 21;
 const uint32_t WaitMillisUSB2000 = 1000;
 
 uint16_t bytesRecvd = 0;
-uint16_t spectraMax = 0;
-uint16_t spectraMin = 65535;
 uint16_t SpecrometerModel;
-uint16_t IntegrationTime = 100;
-byte CoAdd = 1;
 uint16_t MaxValueFromADC = 65535;
 uint16_t BestMaxValue;
 uint16_t BestMinValue;
@@ -80,9 +76,52 @@ uint16_t SpectrometerVersion() {
   return SpectrometerType;
 }
 //*****************************************
-void GetScanFromSpectrometer() {
+bool CheckExposition() {
+
+  bool response = false;
+  bool OkExposition = true;
+
+  response = GetScanFromSpectrometer();
+
+  if (response == false) {
+    DEBUG.println("CheckExposition - Can't get spectrum - ERROR!!!!");
+    return false;
+  }
+
+  DEBUG.print("Starting IntegrationTime->");
+  DEBUG.println(IntegrationTime);
+  while (OkExposition == false) {
+    if (spectraMax  >= HighOptimalLevel) {
+      IntegrationTime = IntegrationTime * 0.95;
+      OkExposition = false;
+      DEBUG.println(IntegrationTime);
+    }
+    if (spectraMin  >= LowOptimalLevel) {
+      IntegrationTime = IntegrationTime * 1.05;
+      OkExposition = false;
+      DEBUG.println(IntegrationTime);
+    }
+
+    if (IntegrationTime >= MaxIntegrationTime ) {
+      DEBUG.println("CheckExposition - MaxIntegrationTime!");
+      return false;
+    }
+
+    response = GetScanFromSpectrometer();
+    if (response == false) {
+      DEBUG.println("CheckExposition - Cant get spectrum - ERROR!!!!");
+      return false;
+    }
+  }
+  return true;
+}
+//*****************************************
+bool GetScanFromSpectrometer() {
   // Send v command to get spectrometer version
   // then go to GetAscan that will send the s command
+  // at the end, without errors, the scan is in the buffer
+
+  bool response;
 
   USB2000.print("v");
   DEBUG.println("v");
@@ -97,7 +136,8 @@ void GetScanFromSpectrometer() {
 
   spectraMax = 0;
   spectraMin = 65535;
-  GetAscan();
+  response = GetAscan();
+  return response;
 }
 
 
@@ -147,7 +187,7 @@ void getSerialData() {
         if (firstByte == true) {
           uhighByte  = x;
           firstByte = false;
-          DEBUG.print(uhighByte);
+          //DEBUG.print(uhighByte);
         }
         else {
           ulowByte = x;
@@ -162,10 +202,14 @@ void getSerialData() {
             if (RawValue < spectraMin) {
               spectraMin = RawValue;
             }
-            DEBUG.print(" ");
-            DEBUG.print(ulowByte);
-            DEBUG.print(" ");
+            /*
+              DEBUG.print(" ");
+              DEBUG.print(ulowByte);
+              DEBUG.print(" ");
+            */
             DEBUG.println(RawValue);
+
+            //++++++++++++++++++++++++++++++++++++++++++++++++++++++++
           }
 
           if (bytesRecvd > numCharsToReceive + 1) {
@@ -180,7 +224,7 @@ void getSerialData() {
       if (bytesRecvd == numCharsToReceive) {    // Are all data received? add here check timeout
         inProgress = false;   //Yes, stop receive data
         allReceived = true;   //All data received
-
+        //StopTime = millis();
       }
     }
   }
