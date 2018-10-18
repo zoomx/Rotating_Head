@@ -112,13 +112,16 @@ uint32_t TimeStart = 0;
 void Init() {
   DEBUG.println(F("INIT"));
   ActualPosition = 0;
-  SSerial.println(F("OK"));
-  return;
+  //SSerial.println(F("OK"));     ///Enable this to skip init !!!!!!!!!!!!
+  //return;                       ///Enable this to skip init !!!!!!!!!!!!
   ActualPosition = 15000;     //That is no position known
   steps = 0;
   boolean found = false;
   // step one revolution  in one direction:
   DEBUG.println(F("positive direction"));
+
+  ResumeMotorPins();
+
   TimeStart = millis();
 
   do
@@ -183,6 +186,9 @@ void FindStepsNumber() {
   boolean found = false;
   // step one revolution  in one direction:
   DEBUG.println(F("positive direction"));
+
+  ResumeMotorPins();
+
   TimeStart = millis();
 
   do
@@ -246,6 +252,9 @@ bool SlitOrPin()
 
   uint16_t Uno = 0;
   uint16_t Zero = 0;
+
+  ResumeMotorPins();
+
   for (int i = 0; i <= 1000; i++) {
     myStepper.step(1);
     if (digitalRead(ZeroPin) == 0)
@@ -395,6 +404,7 @@ void Goto() {
 void MakeSteps() {
   char *arg;
   DEBUG.println(F("STEPS"));
+  ResumeMotorPins();
   TimeStart = millis();
   //recvWithEndMarker();
 

@@ -21,6 +21,8 @@
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 ***********************************************************************************/
 
+#define DEBUG Serial
+
 #if defined(ARDUINO) && ARDUINO >= 100
 #include "Arduino.h"
 #else
@@ -132,6 +134,8 @@ void SerialCommand::readSerial()
 #endif
           // Execute the stored handler function for the command
           (*CommandList[i].function)();
+          DEBUG.print(F("ERR received->"));
+          DEBUG.println(buffer);
           clearBuffer();
           matched = true;
           break;
