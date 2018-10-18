@@ -213,6 +213,10 @@ void WaitForAnswer() {
     DEBUG.println("Timeout");
     DEBUG.println(millis() - StartTime);
   }
+  if(receivedChars != "OK"){
+    DEBUG.print("OK not received->");
+    DEBUG.println(receivedChars);
+  }
 }
 //*********************************************************
 void zeroesDataArray() {
