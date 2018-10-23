@@ -1,10 +1,10 @@
 /*
   Teensy_Commands_USB2000_SD_OneFile
-  
+
   20181002
   char headerScan[22]; was 20 and I got a freeze on writing it to file
   merged from Teensy_Commands_USB2000_SD_OneFile_Exp2
-  
+
   20180925
   Added scans on PARK and START
   Added quality calculation
@@ -15,6 +15,8 @@
   Scan is in Loop
   It uses RTC for filename generation and spectrum header
 
+  20181023
+  Addeddegree field calculation?
 
   TODO
   Calculate Park steps!
@@ -67,6 +69,9 @@
 
 const bool ONLAB = false;
 const char versione[] = "V.0.6";
+
+const uint8_t degreesStep = 4;        //should be 3.6 chiedere a Tommaso/Giuseppe
+uint8_t ScanDegree = 0;
 
 const byte TASTO = 29 ;
 const byte pressedLevel = LOW;
@@ -213,7 +218,7 @@ void WaitForAnswer() {
     DEBUG.println("Timeout");
     DEBUG.println(millis() - StartTime);
   }
-  if(receivedChars != "OK"){
+  if (receivedChars != "OK") {
     DEBUG.print("OK not received->");
     DEBUG.println(receivedChars);
   }

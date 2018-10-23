@@ -206,9 +206,9 @@ void getSerialData() {
               DEBUG.print(" ");
               DEBUG.print(ulowByte);
               DEBUG.print(" ");
-            */
-            DEBUG.println(RawValue);
 
+              DEBUG.println(RawValue);
+             */
             //++++++++++++++++++++++++++++++++++++++++++++++++++++++++
           }
 
