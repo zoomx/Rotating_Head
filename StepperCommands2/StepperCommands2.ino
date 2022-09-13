@@ -53,8 +53,8 @@
   2022 03 03
   SerialCommand library changed
   https://github.com/ppedro74/Arduino-SerialCommands
-  
-    wiring
+
+    wiring      Arduino Motor Shield rev3
   ArduinoPin    L298nPin  MotorWire Signal
   3
   4             SoftwareSerial RX  9600
@@ -94,8 +94,6 @@
 #define BAUDDEBUG 9600
 
 SoftwareSerial SSerial(4, 5); // RX, TX
-//SerialCommand sCmd(SSerial);
-//SerialCommand sCmd;
 char sCmd_buffer_[10];
 SerialCommands sCmd(&SERIAL, sCmd_buffer_, sizeof(sCmd_buffer_), "\r\n", " ");
 
@@ -129,7 +127,7 @@ const int16_t HalfMaxPass = TurnPasses / 2;
 
 //positions
 const uint16_t HeadPark = 0;
-const uint8_t NumScans = 50;
+uint8_t NumScans = 50;
 uint16_t HeadStart = HeadPark + QuarterPasses;
 uint16_t HeadZenith = HeadPark + QuarterPasses * 2;
 uint16_t HeadStop = HeadPark + QuarterPasses * 3;
@@ -152,10 +150,36 @@ Stepper myStepper(stepsPerRevolution, 12, 13);
 uint32_t TimeStart = 0;
 
 
+//*********************************************************
+void Scans(SerialCommands* sender) {
+  /*
+    Set and store scans number
+
+    123456787890
+    SCANS
+  */
+
+  char* port_str = sender->Next();
+  if (port_str == NULL)
+  {
+    DEBUG.println(F("Error no scan number"));
+    SERIAL.println(F("ERR"));
+    return;
+  }
+  NumScans = atoi(port_str);
+  NumScans = 50;   //to be removed
+  MeasSteps = (HeadStop - HeadStart) / NumScans;
+  //store to eeprom
+
+  SERIAL.println(F("OK"));
+}
 
 
 //*********************************************************
 void Init(SerialCommands* sender) {
+  /*
+    Search for zero position
+  */
   DEBUG.println(F("INIT"));
   ActualPosition = 15000;     //That is no position known
   steps = 0;
@@ -398,6 +422,9 @@ void blink() {
 }
 //*********************************************************
 void Park(SerialCommands* sender) {
+  /*
+    Go to Down position
+  */
   DEBUG.println(F("PARK"));
   ResumeMotorPins();
   TimeStart = millis();
@@ -637,7 +664,7 @@ SerialCommand Goto_("GOTO", Goto);
 SerialCommand MakeSteps_("STEPS", MakeSteps);
 SerialCommand FindStepsNumber_("CSTEPS", FindStepsNumber);
 SerialCommand Nexti_("NEXTI", Nexti);
-
+SerialCommand Scans_("SCANS", Scans);
 //*********************************************************
 //*********************************************************
 void setup() {
@@ -683,9 +710,8 @@ void setup() {
   sCmd.AddCommand(&MakeSteps_); //("STEPS", MakeSteps);  //12
   sCmd.AddCommand(&FindStepsNumber_); //("CSTEPS", FindStepsNumber); //13
   sCmd.AddCommand(&Nexti_); //("NEXTI", Nexti);  //14
-  //sCmd.addCommand("DUMMY", Hello); //it seems that the last add is never recognized!
-  //sCmd.setDefaultHandler(unrecognized);      // Handler for command that isn't matched  (says "What?") Old Library
-  sCmd.SetDefaultHandler(unrecognized);       //New Library
+  sCmd.AddCommand(&Scans_); //("SCANS", Scans);  //15
+  sCmd.SetDefaultHandler(unrecognized);       //Handler for command that isn't matched. New Library
 
   DEBUG.print(F("TurnPasses "));
   DEBUG.println(TurnPasses);
