@@ -1,8 +1,11 @@
 #define VERSION "1.0"
-#define SUBVERSION "3"
+#define SUBVERSION "7"
 
 /*
   StepperCommands
+  using Arduino Motor Shield rev3
+  https://store-usa.arduino.cc/products/arduino-motor-shield-rev3
+
   was  Stepper Motor Control - one revolution
   check for zero signal.
   Find zero twice and count the steps
@@ -28,32 +31,66 @@
   2018 07 27
   recvWithEndMarker removed
 
+  2021 04 14
+  Now Command serial is the main serial
+  Debug serial is software serial
+  Added command for counting steps per revolution
+
+  2021 12 13
+  Small corrections
+
+  2021 12 23
+  Added Command NEXTI that doesn't turn off motor
+  GOTO corrected
+
+  2022 01 11
+  Init now go only to zero
+
+  2022 02 08
+  Some changes in PRINTVARS
+  Changed NoZero_b in Zero_b in INIT and CSTEPS
     wiring
   ArduinoPin    L298nPin  MotorWire Signal
   3
+  4             SoftwareSerial RX  9600
+  5             SoftwareSerial TX  also OUT5
+  6             OUT6
+  7
   8             In1         White     A+
   9             In2         Brown     A-
   10            In3         Blue      B+
   11            In4         Black     B-
   12
   13
+  14  A0        Current Sensing ChA
+  15  A1        Current Sensing ChB
+  16  A2        Zero pin
+  17  A3        Input pin free
+  18  A4
+  19  A5
 
 
-  4 SoftwareSerial RX
-  5 SoftwareSerial TX
+    Screw terminal to connect the motors and their power supply.
+    2 TinkerKit connectors for two Analog Inputs (in white), connected to A2 and A3.
+    2 TinkerKit connectors for two Analog Outputs (in orange in the middle),
+      connected to PWM outputs on pins D5 and D6.
+    2 TinkerKit connectors for the TWI interface (in blue with 4 pins),
+      one for input and the other one for output.
+
 */
 
 #include <Stepper.h>
 #include "SerialCommand.h"
 #include <SoftwareSerial.h>
 
-#define DEBUG Serial
-#define BAUDSSERIAL 9600
-#define BAUDDEBUG 115200
+#define SERIAL Serial
+#define DEBUG SSerial
+#define BAUDSSERIAL 115200
+#define BAUDDEBUG 9600
 
 SoftwareSerial SSerial(4, 5); // RX, TX
-SerialCommand sCmd(SSerial);
-//SerialCommand sCmd;
+//SerialCommand sCmd(SSerial);
+SerialCommand sCmd;
 
 // these are used for finding zero, it can be a pin or a hole.
 #define NOZERO 0
@@ -62,7 +99,11 @@ bool NoZero_b = 0;
 bool Zero_b = 1;
 
 
-const uint16_t stepsPerRevolution = 3000;  //Should be 12000
+const uint16_t stepsPerRevolution = 1500;
+//This is not the real value
+//Used for stepper velocity
+//12000 is too much for RS motor
+
 const byte ZeroPin = 16; //A2 IN2
 
 
@@ -73,7 +114,7 @@ const byte brakeB = 8;
 const byte dirA = 12;
 const byte dirB = 13;
 
-const uint16_t TurnPasses = 12000;
+const uint16_t TurnPasses = 3000;
 const uint16_t QuarterPasses = TurnPasses / 4;
 const uint16_t MaxSearchPasses = TurnPasses + QuarterPasses;
 const int16_t HalfMaxPass = TurnPasses / 2;
@@ -111,34 +152,75 @@ void Init() {
   ActualPosition = 15000;     //That is no position known
   steps = 0;
   boolean found = false;
-  // step one revolution  in one direction:
-  DEBUG.println(F("positive direction"));
-  TimeStart = millis();
+
+  DEBUG.println(F("Searching for zero"));
+
+  ResumeMotorPins();
 
   do
   {
     myStepper.step(1);
     steps += 1;
-    if (digitalRead(ZeroPin) == NoZero_b)  //0 if there is a fissure, 1 if there is a pin.
+    if (digitalRead(ZeroPin) == Zero_b)  //0 if there is a fissure, 1 if there is a pin.
     {
       found = true;
     }
   } while ((found == false) && (steps < MaxSearchPasses));
 
+  DEBUG.println(F("End of search"));
+
   if (steps >= MaxSearchPasses) {
     DEBUG.println(F("Zero not found after more than a revolution"));
-    SSerial.println(F("ERR"));
+    SERIAL.println(F("ERR"));
     PrintElapsedTime();
-    return;
+
+  }
+  else {
+    DEBUG.print(steps);
+    DEBUG.println(F("Found zero!"));
+    PrintElapsedTime();
+    blink();
+    ActualPosition = 0;
+    SERIAL.println(F("OK"));
   }
 
-  DEBUG.print(steps);
-  DEBUG.println(F("Found zero!"));
-  PrintElapsedTime();
-  blink();
-  ActualPosition = 0;
-  SSerial.println(F("OK"));
+  LowAllMotorPins();
   return;
+
+
+  /*
+
+    // step one revolution  in one direction:
+    DEBUG.println(F("positive direction"));
+    ResumeMotorPins();
+    TimeStart = millis();
+    DEBUG.println(F("Searching pin or slit"));
+    do
+    {
+      myStepper.step(1);
+      steps += 1;
+      if (digitalRead(ZeroPin) == NoZero_b)  //0 if there is a fissure, 1 if there is a pin.
+      {
+        found = true;
+      }
+    } while ((found == false) && (steps < MaxSearchPasses));
+
+    if (steps >= MaxSearchPasses) {
+      DEBUG.println(F("Zero not found after more than a revolution"));
+      SERIAL.println(F("ERR"));
+      PrintElapsedTime();
+      return;
+    }
+
+    DEBUG.print(steps);
+    DEBUG.println(F("Found zero!"));
+    PrintElapsedTime();
+    blink();
+    ActualPosition = 0;
+    SERIAL.println(F("OK"));
+    return;
+  */
+
   /*
     TimeStart = millis();
     steps = 1000;
@@ -156,7 +238,7 @@ void Init() {
 
     if (steps >= MaxSearchPasses) {
     DEBUG.println(F("Zero not found second time after more than a revolution"));
-    SSerial.println(F("ERR"));
+    SERIAL.println(F("ERR"));
     PrintElapsedTime();
     return;
     }
@@ -166,7 +248,7 @@ void Init() {
     DEBUG.print(steps);
     DEBUG.println(F(" total steps"));
     PrintElapsedTime();
-    SSerial.println(F("OK"));
+    SERIAL.println(F("OK"));
   */
 }
 //*********************************************************
@@ -177,13 +259,16 @@ void FindStepsNumber() {
   boolean found = false;
   // step one revolution  in one direction:
   DEBUG.println(F("positive direction"));
+
+  ResumeMotorPins();
+
   TimeStart = millis();
 
   do
   {
     myStepper.step(1);
     steps += 1;
-    if (digitalRead(ZeroPin) == NoZero_b)  //0 if there is a fissure, 1 if there is a pin.
+    if (digitalRead(ZeroPin) == Zero_b)  //0 if there is a fissure, 1 if there is a pin.
     {
       found = true;
     }
@@ -191,8 +276,9 @@ void FindStepsNumber() {
 
   if (steps >= MaxSearchPasses) {
     DEBUG.println(F("Zero not found first time after more than a revolution"));
-    SSerial.println(F("ERR"));
+    SERIAL.println(F("ERR"));
     PrintElapsedTime();
+    LowAllMotorPins();
     return;
   }
 
@@ -210,7 +296,7 @@ void FindStepsNumber() {
   {
     myStepper.step(1);
     steps += 1;
-    if (digitalRead(ZeroPin) == NoZero_b)
+    if (digitalRead(ZeroPin) == Zero_b)
     {
       found = true;
     }
@@ -218,8 +304,9 @@ void FindStepsNumber() {
 
   if (steps >= MaxSearchPasses) {
     DEBUG.println(F("Zero not found second time after more than a revolution"));
-    SSerial.println(F("ERR"));
+    SERIAL.println(F("ERR"));
     PrintElapsedTime();
+    LowAllMotorPins();
     return;
   }
   ActualPosition = 0;
@@ -229,8 +316,9 @@ void FindStepsNumber() {
   DEBUG.println(F(" total steps"));
   PrintElapsedTime();
   DEBUG.println(steps);
-  SSerial.println(F("OK"));
-
+  //SERIAL.println(F("OK"));
+  SERIAL.println(steps);
+  LowAllMotorPins();
 }
 //*********************************************************
 bool SlitOrPin()
@@ -240,6 +328,7 @@ bool SlitOrPin()
 
   uint16_t Uno = 0;
   uint16_t Zero = 0;
+  ResumeMotorPins();
   for (int i = 0; i <= 1000; i++) {
     myStepper.step(1);
     if (digitalRead(ZeroPin) == 0)
@@ -260,12 +349,12 @@ bool SlitOrPin()
   }
   else  {
     if (Zero > Uno) {
-      DEBUG.print("Pin detected");
+      DEBUG.println("Pin detected");
       NoZero_b = 1;
       Zero_b = 0;
     }
     else {
-      DEBUG.print("Slit detected");
+      DEBUG.println("Slit detected");
       NoZero_b = 0;
       Zero_b = 1;
     }
@@ -276,7 +365,8 @@ bool SlitOrPin()
     steps = -1000;
   }
   myStepper.step(steps);
-  SSerial.println(F("OK"));
+  SERIAL.println(F("OK"));
+  LowAllMotorPins();
 }
 //*********************************************************
 int16_t calculateDifferenceBetweenSteps(int16_t startPosition, int16_t endPosition)
@@ -301,6 +391,7 @@ void blink() {
 //*********************************************************
 void Park() {
   DEBUG.println(F("PARK"));
+  ResumeMotorPins();
   TimeStart = millis();
   int16_t diff = 0;
   diff = calculateDifferenceBetweenSteps(ActualPosition, HeadPark); //HeadPark - ActualPosition;
@@ -308,12 +399,14 @@ void Park() {
   DEBUG.println(diff);
   myStepper.step(diff);
   ActualPosition = ActualPosition + diff;
+  LowAllMotorPins();
   PrintElapsedTime();
-  SSerial.println(F("OK"));
+  SERIAL.println(F("OK"));
 }
 //*********************************************************
 void Start() {
   DEBUG.println(F("START"));
+  ResumeMotorPins();
   TimeStart = millis();
   int16_t diff = 0;
   diff = calculateDifferenceBetweenSteps(ActualPosition, HeadStart); // HeadStart - ActualPosition;
@@ -321,21 +414,36 @@ void Start() {
   DEBUG.println(diff);
   myStepper.step(diff);
   ActualPosition = ActualPosition + diff;
+  LowAllMotorPins();
   PrintElapsedTime();
-  SSerial.println(F("OK"));
+  SERIAL.println(F("OK"));
 }
 //*********************************************************
 void Next() {
   DEBUG.println(F("NEXT"));
+  ResumeMotorPins();
   TimeStart = millis();
   myStepper.step(MeasSteps);
   ActualPosition = ActualPosition + MeasSteps;
+  LowAllMotorPins();
   PrintElapsedTime();
-  SSerial.println(F("OK"));
+  SERIAL.println(F("OK"));
+}
+//*********************************************************
+void Nexti() {
+  DEBUG.println(F("NEXTI"));
+  ResumeMotorPins();
+  TimeStart = millis();
+  myStepper.step(MeasSteps);
+  ActualPosition = ActualPosition + MeasSteps;
+  //LowAllMotorPins();
+  PrintElapsedTime();
+  SERIAL.println(F("OK"));
 }
 //*********************************************************
 void Stop() {
   DEBUG.println(F("STOP"));
+  ResumeMotorPins();
   TimeStart = millis();
   int16_t diff = 0;
   diff = calculateDifferenceBetweenSteps(ActualPosition, HeadStop);// HeadStop - ActualPosition;
@@ -343,13 +451,15 @@ void Stop() {
   DEBUG.println(diff);
   myStepper.step(diff);
   ActualPosition = ActualPosition + diff;
+  LowAllMotorPins();
   PrintElapsedTime();
-  SSerial.println(F("OK"));
+  SERIAL.println(F("OK"));
 }
 //*********************************************************
 void Goto() {
   char *arg;
   DEBUG.println(F("GOTO"));
+  ResumeMotorPins();
   TimeStart = millis();
   //recvWithEndMarker();
 
@@ -358,25 +468,23 @@ void Goto() {
 
   steps = atoi(arg);
   DEBUG.println(steps);
-  /*
-    String response = arg;
-    DEBUG.println(response);
-    steps = response.toInt();
-    DEBUG.println(steps);
-  */
+
   int16_t diff = 0;
-  diff = calculateDifferenceBetweenSteps(ActualPosition, HeadZenith); // HeadZenith - ActualPosition;
+  diff = calculateDifferenceBetweenSteps(ActualPosition, steps);
   DEBUG.print("Diff to New Position ");
   DEBUG.println(diff);
   myStepper.step(diff);
   ActualPosition = ActualPosition + diff;
+  LowAllMotorPins();
   PrintElapsedTime();
-  SSerial.println(F("OK"));
+  SERIAL.println(F("OK"));
+  //SERIAL.println(F("OK"));
 }
 //*********************************************************
 void MakeSteps() {
   char *arg;
   DEBUG.println(F("STEPS"));
+  ResumeMotorPins();
   TimeStart = millis();
   //recvWithEndMarker();
 
@@ -394,12 +502,14 @@ void MakeSteps() {
 
   myStepper.step(steps);
   ActualPosition = ActualPosition + steps;
+  LowAllMotorPins();
   PrintElapsedTime();
-  SSerial.println(F("OK"));
+  SERIAL.println(F("OK"));
 }
 //*********************************************************
 void Zenith() {
   DEBUG.println(F("ZENITH"));
+  ResumeMotorPins();
   TimeStart = millis();
   int16_t diff = 0;
   diff = calculateDifferenceBetweenSteps(ActualPosition, HeadZenith); // HeadZenith - ActualPosition;
@@ -407,66 +517,71 @@ void Zenith() {
   DEBUG.println(diff);
   myStepper.step(diff);
   ActualPosition = ActualPosition + diff;
+  LowAllMotorPins();
   PrintElapsedTime();
-  SSerial.println(F("OK"));
+  SERIAL.println(F("OK"));
 }
 //*********************************************************
 void Hello() {
   DEBUG.println(F("HELLO"));
-  SSerial.println(F("OK"));
+  SERIAL.println(F("OK"));
 }
 //*********************************************************
 void GetPos() {
   DEBUG.print(F("ActualPosition "));
-  SSerial.println(ActualPosition);
+  SERIAL.println(ActualPosition);
   DEBUG.println(ActualPosition);
 }
 //*********************************************************
 void PrintVars() {
-  SSerial.println(F("Print vars"));
-  SSerial.print("stepsPerRevolution ");
-  SSerial.println(stepsPerRevolution);
-  SSerial.print(F("ZeroPin "));
-  //SSerial.println(ZeroPin);
-  //SSerial.print(F("ZeroPin "));
-  SSerial.println(ZeroPin);
-  SSerial.print(F("TurnPasses "));
-  SSerial.println(TurnPasses);
-  SSerial.print(F("QuarterPasses "));
-  SSerial.println(QuarterPasses);
-  SSerial.print(F("MaxSearchPasses "));
-  SSerial.println(MaxSearchPasses);
-  SSerial.print(F("HeadPark "));
-  SSerial.println(HeadPark);
-  SSerial.print(F("HeadStart "));
-  SSerial.println(HeadStart);
-  SSerial.print(F("HeadZenith "));
-  SSerial.println(HeadZenith);
-  SSerial.print(F("HeadStop "));
-  SSerial.println(HeadStop);
-  SSerial.print(F("MeasSteps "));
-  SSerial.println(MeasSteps);
-  SSerial.print(F("ActualPosition "));
-  SSerial.println(ActualPosition);
-  SSerial.print(F("HeadStartDegrees "));
-  SSerial.println(HeadStartDegrees);
-  SSerial.print(F("HeadStopDegrees "));
-  SSerial.println(HeadStopDegrees);
-  SSerial.print(F("WaitMillis "));
-  SSerial.println(WaitMillis);
-  SSerial.print(F("Version "));
-  SSerial.println(VERSION);
+  SERIAL.println(F("Print vars"));
+  SERIAL.print("stepsPerRevolution ");
+  SERIAL.println(stepsPerRevolution);
+  SERIAL.print(F("ZeroPin "));
+  SERIAL.println(ZeroPin);
+  SERIAL.print(F("ZeroPin Value->"));
+  SERIAL.println(digitalRead(ZeroPin));
+  SERIAL.print(F("NoZero_b Value->"));
+  SERIAL.println(NoZero_b);
+  SERIAL.print(F(" "));
+  SERIAL.println(digitalRead(ZeroPin));
+  SERIAL.print(F("TurnPasses "));
+  SERIAL.println(TurnPasses);
+  SERIAL.print(F("QuarterPasses "));
+  SERIAL.println(QuarterPasses);
+  SERIAL.print(F("MaxSearchPasses "));
+  SERIAL.println(MaxSearchPasses);
+  SERIAL.print(F("HeadPark "));
+  SERIAL.println(HeadPark);
+  SERIAL.print(F("HeadStart "));
+  SERIAL.println(HeadStart);
+  SERIAL.print(F("HeadZenith "));
+  SERIAL.println(HeadZenith);
+  SERIAL.print(F("HeadStop "));
+  SERIAL.println(HeadStop);
+  SERIAL.print(F("MeasSteps "));
+  SERIAL.println(MeasSteps);
+  SERIAL.print(F("ActualPosition "));
+  SERIAL.println(ActualPosition);
+  SERIAL.print(F("HeadStartDegrees "));
+  SERIAL.println(HeadStartDegrees);
+  SERIAL.print(F("HeadStopDegrees "));
+  SERIAL.println(HeadStopDegrees);
+  SERIAL.print(F("WaitMillis "));
+  SERIAL.println(WaitMillis);
+  SERIAL.print(F("Version "));
+  SERIAL.println(VERSION);
   DEBUG.println(VERSION);
-  SSerial.print(F("SubVersion "));
-  SSerial.println(SUBVERSION);
+  SERIAL.print(F("SubVersion "));
+  SERIAL.println(SUBVERSION);
   DEBUG.println(SUBVERSION);
-  SSerial.println( "Compiled: " __DATE__ ", " __TIME__ ", " __VERSION__);
+  SERIAL.println( "Compiled: " __DATE__ ", " __TIME__ ", " __VERSION__);
   DEBUG.println( "Compiled: " __DATE__ ", " __TIME__ ", " __VERSION__);
   /*
-    SSerial.print("pwmA ");
-    SSerial.println(pwmA);
-    SSerial.print("pwmB ");
-    SSerial.println(pwmB);
+    SERIAL.print("pwmA ");
+    SERIAL.println(pwmA);
+    SERIAL.print("pwmB ");
+    SERIAL.println(pwmB);
 
 
     const int pwmA = 3;
@@ -480,8 +595,23 @@ void PrintVars() {
 
 //*********************************************************
 void unrecognized(const char *command) {
-  SSerial.println(F("CMDERR"));
+  SERIAL.println(F("CMDERR"));
   DEBUG.println(F("CMDERR"));
+  DEBUG.println(command);
+}
+//*********************************************************
+void LowAllMotorPins() {
+  digitalWrite(pwmA, LOW);
+  digitalWrite(pwmB, LOW);
+  digitalWrite(brakeA, LOW);
+  digitalWrite(brakeB, LOW);
+}
+//*********************************************************
+void ResumeMotorPins() {
+  digitalWrite(pwmA, HIGH);
+  digitalWrite(pwmB, HIGH);
+  digitalWrite(brakeA, LOW);
+  digitalWrite(brakeB, LOW);
 }
 //*********************************************************
 //*********************************************************
@@ -494,14 +624,16 @@ void setup() {
   pinMode(pwmB, OUTPUT);
   pinMode(brakeA, OUTPUT);
   pinMode(brakeB, OUTPUT);
-  digitalWrite(pwmA, HIGH);
-  digitalWrite(pwmB, HIGH);
+  digitalWrite(pwmA, LOW); //was high
+  digitalWrite(pwmB, LOW); //was high
   digitalWrite(brakeA, LOW);
   digitalWrite(brakeB, LOW);
+  LowAllMotorPins();
 
   pinMode(ZeroPin, INPUT);   //maybe use INPUT_PULLUP?
 
-  SSerial.begin(BAUDSSERIAL);
+  SERIAL.begin(BAUDSSERIAL);
+  //SSerial.begin(BAUDSSERIAL);
   DEBUG.begin(BAUDDEBUG);
   DEBUG.println(F("StepperCommands"));
 
@@ -512,21 +644,28 @@ void setup() {
     delay(50);
   }
 
-  sCmd.addCommand("INIT", Init);
-  sCmd.addCommand("PARK", Park);
-  sCmd.addCommand("START", Start);
-  sCmd.addCommand("NEXT", Next);
-  sCmd.addCommand("STOP", Stop);
-  sCmd.addCommand("ZENITH", Zenith);
-  sCmd.addCommand("GETPOS", GetPos);
-  sCmd.addCommand("PRINTVARS", PrintVars);
-  sCmd.addCommand("ZTYPE", SlitOrPin);
-  sCmd.addCommand("HELLO", Hello);
-  sCmd.addCommand("GOTO", Goto);
-  sCmd.addCommand("STEPS", MakeSteps);
+  sCmd.addCommand("INIT", Init);  //1
+  sCmd.addCommand("PARK", Park);  //2
+  sCmd.addCommand("START", Start);  //3
+  sCmd.addCommand("NEXT", Next);  //4
+  sCmd.addCommand("STOP", Stop);  //5
+  sCmd.addCommand("ZENITH", Zenith);  //6
+  sCmd.addCommand("GETPOS", GetPos);  //7
+  sCmd.addCommand("PRINTVARS", PrintVars);  //8
+  sCmd.addCommand("ZTYPE", SlitOrPin);  //9
+  sCmd.addCommand("HELLO", Hello);  //10
+  sCmd.addCommand("GOTO", Goto);  //11
+  sCmd.addCommand("STEPS", MakeSteps);  //12
+  sCmd.addCommand("CSTEPS", FindStepsNumber); //13
+  sCmd.addCommand("NEXTI", Nexti);  //14
   //sCmd.addCommand("DUMMY", Hello); //it seems that the last add is never recognized!
   //sCmd.setDefaultHandler(unrecognized);      // Handler for command that isn't matched  (says "What?") Old Library
   sCmd.addDefaultHandler(unrecognized);       //New Library
+
+  DEBUG.print(F("TurnPasses "));
+  DEBUG.println(TurnPasses);
+  DEBUG.print(F("MeasSteps "));
+  DEBUG.println(MeasSteps);
   DEBUG.println(F("Waiting for commands"));
 }
 //*********************************************************
